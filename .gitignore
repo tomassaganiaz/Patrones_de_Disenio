@@ -1,0 +1,40 @@
+# Compilados
+out/
+target/
+*.class
+*.jar
+*.war
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+*.launch
+nbproject/
+nb-private/
+
+# SO
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+out_*.txt
+
+# Temp
+*.tmp
+*.swp
+*~

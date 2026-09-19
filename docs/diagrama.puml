@@ -1,0 +1,164 @@
+@startuml Tienda Strategy + Chain SOLID MVC
+skinparam classAttributeIconSize 0
+title TIENDA ONLINE - Strategy + Chain + SOLID + MVC
+
+' ============ MODEL ============
+package "model (SRP)" {
+  enum TipoCliente { COMUN PREMIUM VIP }
+  enum TipoEnvio { RETIRO_SUCURSAL ENVIO_NORMAL ENVIO_EXPRESS }
+  class Compra {
+    - precioBase: double
+    - tipoCliente: TipoCliente
+    - cantidadProductos: int
+    - tipoEnvio: TipoEnvio
+  }
+  class Pedido {
+    - compra: Compra
+    - precioFinal: double
+    - clienteValido: boolean
+    - stockDisponible: boolean
+    - pagoValido: boolean
+  }
+  class ResultadoValidacion {
+    - aprobado: boolean
+    - mensaje: String
+  }
+  Compra --> TipoCliente
+  Compra --> TipoEnvio
+  Pedido --> Compra
+}
+
+' ============ STRATEGY ============
+package "strategy (Strategy Pattern)" {
+  interface EstrategiaPrecio {
+    + aplicar(precio: double, compra: Compra): double
+    + getDescripcion(): String
+  }
+  class CalculadoraPrecio {
+    - estrategias: List<EstrategiaPrecio>
+    + agregarEstrategia(e: EstrategiaPrecio)
+    + calcular(compra: Compra): double
+    + calcularConDetalle(compra: Compra): ResultadoCalculo
+  }
+  class DescuentoClienteComun
+  class DescuentoClientePremium
+  class DescuentoClienteVIP
+  class DescuentoMayor5
+  class DescuentoMayor10
+  class DescuentoPorCantidad
+  class CostoEnvio
+  class PromocionEspecial
+
+  EstrategiaPrecio <|.. DescuentoClienteComun
+  EstrategiaPrecio <|.. DescuentoClientePremium
+  EstrategiaPrecio <|.. DescuentoClienteVIP
+  EstrategiaPrecio <|.. DescuentoMayor5
+  EstrategiaPrecio <|.. DescuentoMayor10
+  EstrategiaPrecio <|.. DescuentoPorCantidad
+  EstrategiaPrecio <|.. CostoEnvio
+  EstrategiaPrecio <|.. PromocionEspecial
+  CalculadoraPrecio o--> EstrategiaPrecio : usa 1..*
+  CalculadoraPrecio ..> Compra : lee
+  EstrategiaPrecio ..> Compra : consulta
+}
+
+' ============ CHAIN ============
+package "chain (Chain of Responsibility)" {
+  abstract class Handler {
+    # siguiente: Handler
+    + setSiguiente(h: Handler): Handler
+    + handle(pedido: Pedido): ResultadoValidacion
+    # validar(pedido: Pedido): ResultadoValidacion {abstract}
+  }
+  class ValidadorCliente
+  class ValidadorStock
+  class ValidadorPago
+  class ValidadorFraude
+
+  Handler <|-- ValidadorCliente
+  Handler <|-- ValidadorStock
+  Handler <|-- ValidadorPago
+  Handler <|-- ValidadorFraude
+  Handler o--> Handler : siguiente
+  Handler ..> Pedido : valida
+  Handler ..> ResultadoValidacion : retorna
+}
+
+' ============ CHALLENGE (OCP) ============
+package "challenge (OCP)" {
+  class DescuentoBlackFriday
+  class ValidadorLimiteCompra
+  EstrategiaPrecio <|.. DescuentoBlackFriday
+  Handler <|-- ValidadorLimiteCompra
+}
+
+' ============ MVC ============
+package "controller (Controller)" {
+  class TiendaController {
+    + calcularPrecio(compra, estrategias): double
+    + calcularConDetalle(compra, estrategias): CalculadoraDetalle
+    + validarPedido(pedido, cadena): ResultadoValidacion
+    + procesarPedido(compra, cadena, flags, estrategias): ResultadoOperacion
+    + crearCadenaBase(): Handler
+    + crearCadenaCon(extra: Handler): Handler
+  }
+  class ResultadoOperacion {
+    - precioFinal: double
+    - validacion: ResultadoValidacion
+    - detalle: CalculadoraDetalle
+  }
+  TiendaController ..> CalculadoraPrecio : usa
+  TiendaController ..> Handler : orquesta
+  TiendaController ..> Compra : lee
+  TiendaController ..> Pedido : crea
+  TiendaController ..> ResultadoOperacion : crea
+  TiendaController ..> ResultadoValidacion : retorna
+}
+
+package "view (View)" {
+  class TiendaView {
+    + mostrarEncabezado(titulo)
+    + mostrarCompra(compra)
+    + mostrarCalculoDetalle(detalle, precio)
+    + mostrarChainHeader()
+    + mostrarResultadoFinal(res)
+    + mostrarExplicacion()
+  }
+  TiendaView ..> ResultadoOperacion : muestra
+  TiendaView ..> Compra : muestra
+  TiendaView ..> ResultadoValidacion : muestra
+}
+
+' ============ CLIENT ============
+class Main
+Main ..> TiendaController : wiring
+Main ..> TiendaView : wiring
+Main ..> Compra : crea datos
+TiendaView ..> TiendaController : recibe DTOs
+
+note right of CalculadoraPrecio
+  Context Strategy
+  DIP: depende de
+  EstrategiaPrecio
+end note
+
+note right of Handler
+  SRP + OCP
+  cada handler una
+  validación
+end note
+
+note bottom of TiendaController
+  Testeable sin Main:
+  19 tests en TestRunner
+  + JUnit5 (mvn test)
+  No usa System.out
+end note
+
+note bottom of Main
+  Sin lógica:
+  solo 5 casos demo
+  via Controller+View
+end note
+
+@enduml
