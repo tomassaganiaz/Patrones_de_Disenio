@@ -8,11 +8,3 @@ if %errorlevel% neq 0 (
   echo TESTS FAIL
   exit /b 1
 )
-echo.
-echo === Para JUnit (requiere Maven) ===
-where mvn >nul 2>nul
-if %errorlevel% equ 0 (
-  mvn test
-) else (
-  echo Maven no encontrado - tests JUnit omitidos (TestRunner ya paso^)
-)

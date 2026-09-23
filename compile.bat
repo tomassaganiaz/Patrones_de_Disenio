@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 if exist out rmdir /s /q out
 mkdir out
-echo Compilando MAIN (MVC + correcciones + futuras)...
+echo Compilando MAIN...
 set FILES=
 for /R src\main\java %%f in (*.java) do set FILES=!FILES! "%%f"
 javac -d out -encoding UTF-8 -sourcepath "src\main\java" !FILES!
@@ -18,5 +18,4 @@ if %errorlevel% neq 0 (
   echo ERROR compilacion TestRunner
   exit /b 1
 )
-echo TESTS OK -> out\
-echo Para JUnit: mvn test  (requiere Maven)
+echo TESTS OK. (en la carpeta out)

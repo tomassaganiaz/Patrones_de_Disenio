@@ -1,155 +1,208 @@
 package com.tienda;
 
-import com.tienda.challenge.DescuentoBlackFriday;
-import com.tienda.challenge.ValidadorLimiteCompra;
-import com.tienda.chain.ResultadoValidacion;
-import com.tienda.controller.ResultadoOperacion;
 import com.tienda.controller.TiendaController;
-import com.tienda.model.Compra;
-import com.tienda.model.Pedido;
-import com.tienda.model.TipoCliente;
-import com.tienda.model.TipoEnvio;
-import com.tienda.strategy.*;
+import com.tienda.model.dao.PedidoDAOMemoria;
+import com.tienda.model.domain.Compra;
+import com.tienda.model.domain.Pedido;
+import com.tienda.model.services.CalculoPrecioService;
+import com.tienda.model.services.ClientePremium;
+import com.tienda.model.services.ClienteVip;
+import com.tienda.model.services.DescuentoBlackFriday;
+import com.tienda.model.services.DescuentoPorCantidad;
+import com.tienda.model.services.EnvioExpress;
+import com.tienda.model.services.EnvioNormal;
+import com.tienda.model.services.PromocionPorcentual;
+import com.tienda.model.services.ValidacionPedidoService;
+import com.tienda.view.ConsolaView;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
-// Runner sin dependencias - testeable sin Main ni Maven
+// Runner sin JUnit: corre la demo (igual que main.py) y las verificaciones.
 public class TestRunner {
-    private static int pass=0, fail=0;
+    private static int pass = 0;
+    private static int fail = 0;
 
     public static void main(String[] args) {
-        System.out.println("=== TESTS SIN MAIN (MVC testeable) ===");
-        testStrategy();
-        testChain();
-        testController();
-        testDesafio();
-        testModel();
-        testReglasIndependientes();
-        testOutputInyectable();
+        System.out.println("========== TIENDA ONLINE - DEMO Y TESTS ==========\n");
+        demoCasos();
+        testCalculoPrecioService();
+        testValidacionPedidoService();
+        testPedidoDao();
         System.out.println("\n=== RESULTADO: " + pass + " PASS, " + fail + " FAIL ===");
-        if (fail>0) System.exit(1);
+        if (fail > 0) {
+            System.exit(1);
+        }
     }
 
-    static void testStrategy() {
-        check("strategy: base sin estrategias", eq(
-                new TiendaController().calcularPrecio(new Compra(100, TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL)), 100));
-        check("strategy: VIP -15%", eq(
-                new TiendaController().calcularPrecio(new Compra(100000,TipoCliente.VIP,1,TipoEnvio.RETIRO_SUCURSAL), new DescuentoClienteVIP()), 85000));
-        check("strategy: cantidad >5 -5%", eq(
-                new TiendaController().calcularPrecio(new Compra(10000,TipoCliente.COMUN,6,TipoEnvio.RETIRO_SUCURSAL), new DescuentoPorCantidad()), 9500));
-        check("strategy: cantidad >10 -10%", eq(
-                new TiendaController().calcularPrecio(new Compra(10000,TipoCliente.COMUN,12,TipoEnvio.RETIRO_SUCURSAL), new DescuentoPorCantidad()), 9000));
-        check("strategy: envio normal +5000", eq(
-                new TiendaController().calcularPrecio(new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.ENVIO_NORMAL), new CostoEnvio()), 15000));
-        check("strategy: enunciado 82675", eq(
-                new TiendaController().calcularPrecio(
-                    new Compra(100000,TipoCliente.VIP,12,TipoEnvio.ENVIO_EXPRESS),
-                    new DescuentoClienteVIP(), new DescuentoPorCantidad(),
-                    new PromocionEspecial(0.05,"Promo"), new CostoEnvio()), 82675));
+    // Demo identica a main.py del TP: PARTE 1, PARTE 2, DESAFIO y DAO.
+    private static void demoCasos() {
+        TiendaController controller = new TiendaController(
+                new ConsolaView(), new PedidoDAOMemoria());
+
+        controller.mostrarTitulo(
+                "PARTE 1 - STRATEGY: calculo del precio final de una compra");
+        Compra compra = new Compra(100_000, 12);
+        compra.agregarEstrategia(new ClienteVip());
+        compra.agregarEstrategia(new DescuentoPorCantidad());
+        compra.agregarEstrategia(new PromocionPorcentual(5, "Promocion especial"));
+        compra.agregarEstrategia(new EnvioExpress());
+        double precio = controller.calcularPrecioCompra(compra);
+
+        controller.mostrarTitulo(
+                "PARTE 2 - CHAIN OF RESPONSIBILITY: validacion de pedidos");
+        Pedido pedidoAprobado = new Pedido("PED-001", true, true, true, precio);
+        Pedido pedidoSinStock = new Pedido("PED-002", true, false, true, 45_000);
+        Pedido pedidoPagoRechazado = new Pedido("PED-003", true, true, false, 60_000);
+        ValidacionPedidoService validacion = new ValidacionPedidoService();
+        controller.procesarPedido(pedidoAprobado, validacion);
+        controller.procesarPedido(pedidoSinStock, validacion);
+        controller.procesarPedido(pedidoPagoRechazado, validacion);
+
+        controller.mostrarTitulo(
+                "DESAFIO: nueva estrategia y nuevo validador, sin tocar los existentes");
+        Compra compraDesafio = new Compra(100_000, 3);
+        compraDesafio.agregarEstrategia(new ClientePremium());
+        compraDesafio.agregarEstrategia(new DescuentoBlackFriday());
+        compraDesafio.agregarEstrategia(new EnvioNormal());
+        double precioDesafio = controller.calcularPrecioCompra(compraDesafio);
+
+        ValidacionPedidoService validacionConLimite =
+                new ValidacionPedidoService(true);
+        Pedido pedidoOk = new Pedido("PED-004", true, true, true, precioDesafio);
+        controller.procesarPedido(pedidoOk, validacionConLimite);
+
+        Pedido pedidoExcedeLimite = new Pedido("PED-005", true, true, true, 800_000);
+        controller.procesarPedido(pedidoExcedeLimite, validacionConLimite);
+
+        controller.mostrarTitulo("PEDIDOS PERSISTIDOS (capa DAO)");
+        controller.mostrarPedidosPersistidos();
     }
 
-    static void testChain() {
-        TiendaController ctrl = new TiendaController();
-        check("chain: aprobado", ctrl.procesarPedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL),
-                ctrl.crearCadenaBase(), true,true,true).isAprobado());
-        check("chain: stock corta", !ctrl.procesarPedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL),
-                ctrl.crearCadenaBase(), true,false,true).isAprobado());
-        check("chain: pago corta", !ctrl.procesarPedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL),
-                ctrl.crearCadenaBase(), true,true,false).isAprobado());
-        check("chain: cliente corta", !ctrl.procesarPedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL),
-                ctrl.crearCadenaBase(), false,true,true).isAprobado());
+    // Verificaciones de CalculoPrecioService (patron Strategy).
+    private static void testCalculoPrecioService() {
+        CalculoPrecioService service = new CalculoPrecioService();
+
+        Compra sinEstrategias = new Compra(100_000, 1);
+        check("strategy: sin estrategias no cambia el precio",
+                eq(service.calcular(sinEstrategias), 100_000));
+
+        Compra enunciado = new Compra(100_000, 12);
+        enunciado.agregarEstrategia(new ClienteVip());
+        enunciado.agregarEstrategia(new DescuentoPorCantidad());
+        enunciado.agregarEstrategia(new PromocionPorcentual(5));
+        enunciado.agregarEstrategia(new EnvioExpress());
+        double esperado = 100_000 * 0.85 * 0.90 * 0.95 + 10_000;
+        check("strategy: ejemplo del enunciado (82675)",
+                eq(service.calcular(enunciado), esperado));
+
+        Compra conHistorial = new Compra(100_000, 1);
+        conHistorial.agregarEstrategia(new ClienteVip());
+        conHistorial.agregarEstrategia(new EnvioExpress());
+        service.calcular(conHistorial);
+        boolean historialOk = conHistorial.getHistorial().size() == 2
+                && conHistorial.getHistorial().get(0).descripcion
+                        .equals("Cliente VIP (-15%)");
+        check("strategy: registra un paso de historial por estrategia",
+                historialOk);
+
+        Compra blackFriday = new Compra(100_000, 1);
+        blackFriday.agregarEstrategia(new DescuentoBlackFriday());
+        check("strategy: desafio black friday -25%",
+                eq(service.calcular(blackFriday), 75_000));
     }
 
-    static void testController() {
-        TiendaController ctrl = new TiendaController();
-        ResultadoOperacion op1 = ctrl.procesarPedido(
-                new Compra(100000,TipoCliente.VIP,12,TipoEnvio.ENVIO_EXPRESS),
-                ctrl.crearCadenaBase(), true,true,true,
-                new DescuentoClienteVIP(), new DescuentoPorCantidad(),
-                new PromocionEspecial(0.05,"Promo"), new CostoEnvio());
-        check("controller: caso1 82675 aprobado", eq(op1.getPrecioFinal(),82675) && op1.isAprobado());
+    // Verificaciones de ValidacionPedidoService (Chain of Responsibility).
+    private static void testValidacionPedidoService() {
+        ValidacionPedidoService service = new ValidacionPedidoService();
 
-        ResultadoOperacion op2 = ctrl.procesarPedido(
-                new Compra(50000,TipoCliente.PREMIUM,8,TipoEnvio.ENVIO_NORMAL),
-                ctrl.crearCadenaBase(), true,false,true,
-                new DescuentoClientePremium(), new DescuentoPorCantidad(), new CostoEnvio());
-        check("controller: caso2 47750 rechazado stock", eq(op2.getPrecioFinal(),47750) && !op2.isAprobado());
+        Pedido valido = pedido(10_000, true, true, true);
+        check("chain: pedido valido queda aprobado", service.procesar(valido));
+        check("chain: pasos del valido son Cliente/Stock/Pago",
+                nombresPasos(valido).equals(Arrays.asList(
+                        "Validar Cliente", "Validar Stock", "Validar Pago")));
 
-        ResultadoOperacion op3 = ctrl.procesarPedido(
-                new Compra(75000,TipoCliente.COMUN,3,TipoEnvio.RETIRO_SUCURSAL),
-                ctrl.crearCadenaBase(), true,true,false,
-                new DescuentoClienteComun(), new DescuentoPorCantidad(), new PromocionEspecial(), new CostoEnvio());
-        check("controller: caso3 67500 rechazado pago", eq(op3.getPrecioFinal(),67500) && !op3.isAprobado());
+        Pedido sinStock = pedido(10_000, true, false, true);
+        check("chain: sin stock se detiene antes de pago",
+                !service.procesar(sinStock)
+                        && "Validar Stock".equals(sinStock.getHandlerRechazo()));
+        check("chain: pasos del sin stock son Cliente/Stock",
+                nombresPasos(sinStock).equals(Arrays.asList(
+                        "Validar Cliente", "Validar Stock")));
+
+        Pedido pagoRechazado = pedido(10_000, true, true, false);
+        check("chain: pago rechazado detiene en pago",
+                !service.procesar(pagoRechazado)
+                        && "Validar Pago".equals(pagoRechazado.getHandlerRechazo()));
+
+        Pedido caroEstandar = pedido(800_000, true, true, true);
+        check("chain: desafio limite no afecta la cadena estandar",
+                service.procesar(caroEstandar));
+
+        ValidacionPedidoService serviceConLimite =
+                new ValidacionPedidoService(true);
+        Pedido caroConLimite = pedido(800_000, true, true, true);
+        check("chain: desafio limite rechaza montos excesivos",
+                !serviceConLimite.procesar(caroConLimite)
+                        && "Validar Limite de Compra"
+                                .equals(caroConLimite.getHandlerRechazo()));
     }
 
-    static void testDesafio() {
-        TiendaController ctrl = new TiendaController();
-        check("desafio: blackFriday -25%", eq(
-                new TiendaController().calcularPrecio(new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL), new DescuentoBlackFriday()), 7500));
-        check("desafio: limite aprobado 200k", ctrl.procesarPedido(
-                new Compra(100000,TipoCliente.VIP,12,TipoEnvio.ENVIO_EXPRESS),
-                ctrl.crearCadenaCon(new ValidadorLimiteCompra(200000)), true,true,true,
-                new DescuentoClienteVIP(), new DescuentoPorCantidad(),
-                new PromocionEspecial(0.05,"Promo"), new DescuentoBlackFriday(), new CostoEnvio()).isAprobado());
-        check("desafio: limite rechazado 150k", !ctrl.procesarPedido(
-                new Compra(300000,TipoCliente.COMUN,1,TipoEnvio.ENVIO_EXPRESS),
-                ctrl.crearCadenaCon(new ValidadorLimiteCompra(150000)), true,true,true,
-                new DescuentoClienteVIP(), new DescuentoPorCantidad(),
-                new PromocionEspecial(0.05,"Promo"), new DescuentoBlackFriday(), new CostoEnvio()).isAprobado());
-        // OCP: base sigue ok
-        check("desafio: no rompe base", ctrl.procesarPedido(
-                new Compra(100000,TipoCliente.VIP,12,TipoEnvio.ENVIO_EXPRESS),
-                ctrl.crearCadenaBase(), true,true,true,
-                new DescuentoClienteVIP(), new DescuentoPorCantidad()).isAprobado());
+    // Verificaciones de PedidoDAOMemoria (capa DAO).
+    private static void testPedidoDao() {
+        PedidoDAOMemoria dao = new PedidoDAOMemoria();
+
+        Pedido p1 = new Pedido("PED-1", true, true, true, 1000);
+        dao.guardar(p1);
+        check("dao: guarda y busca por id", dao.buscarPorId("PED-1") == p1);
+
+        check("dao: buscar id inexistente devuelve null",
+                dao.buscarPorId("NO-EXISTE") == null);
+
+        Pedido p2 = new Pedido("PED-2", true, true, true, 2000);
+        dao.guardar(p2);
+        check("dao: listar devuelve todos los guardados",
+                dao.listar().size() == 2);
+
+        PedidoDAOMemoria daoConActualizacion = new PedidoDAOMemoria();
+        Pedido original = new Pedido("PED-1", true, true, true, 1000);
+        Pedido actualizado = new Pedido("PED-1", true, true, true, 5000);
+        daoConActualizacion.guardar(original);
+        daoConActualizacion.guardar(actualizado);
+        check("dao: guardar el mismo id sobrescribe",
+                daoConActualizacion.listar().size() == 1
+                        && daoConActualizacion.buscarPorId("PED-1")
+                                .getPrecioFinal() == 5000);
     }
 
-    static void testModel() {
-        Compra c = new Compra(123, TipoCliente.PREMIUM,7,TipoEnvio.ENVIO_NORMAL);
-        check("model: compra getters", c.getPrecioBase()==123 && c.getTipoCliente()==TipoCliente.PREMIUM);
-        Pedido p = new Pedido(c, 100, true,false,true);
-        check("model: pedido flags", p.isClienteValido() && !p.isStockDisponible());
+    // Crea un pedido con los flags y el precio indicados.
+    private static Pedido pedido(double precio, boolean clienteOk,
+            boolean stockOk, boolean pagoOk) {
+        return new Pedido("PED-TEST", clienteOk, stockOk, pagoOk, precio);
     }
 
-    static boolean eq(double a,double b){ return Math.abs(a-b)<0.01; }
-    static void check(String name, boolean ok){
-        if(ok){ pass++; System.out.println("  PASS: "+name); }
-        else { fail++; System.out.println("  FAIL: "+name); }
+    // Devuelve solo los nombres de los pasos registrados en el pedido.
+    private static List<String> nombresPasos(Pedido pedido) {
+        List<String> nombres = new ArrayList<String>();
+        for (Pedido.PasoValidacion paso : pedido.getPasos()) {
+            nombres.add(paso.nombre);
+        }
+        return nombres;
     }
 
-    // Reglas independientes: Mayor5 solo en rango 6-10, Mayor10 solo >10
-    static void testReglasIndependientes() {
-        TiendaController c = new TiendaController();
-        check("mayor5: 6 productos -5%", eq(c.calcularPrecio(
-                new Compra(10000,TipoCliente.COMUN,6,TipoEnvio.RETIRO_SUCURSAL), new DescuentoMayor5()), 9500));
-        check("mayor5: 12 productos no aplica", eq(c.calcularPrecio(
-                new Compra(10000,TipoCliente.COMUN,12,TipoEnvio.RETIRO_SUCURSAL), new DescuentoMayor5()), 10000));
-        check("mayor10: 12 productos -10%", eq(c.calcularPrecio(
-                new Compra(10000,TipoCliente.COMUN,12,TipoEnvio.RETIRO_SUCURSAL), new DescuentoMayor10()), 9000));
-        check("mayor10: 6 productos no aplica", eq(c.calcularPrecio(
-                new Compra(10000,TipoCliente.COMUN,6,TipoEnvio.RETIRO_SUCURSAL), new DescuentoMayor10()), 10000));
-        // combinadas excluyentes dan mismo resultado que DescuentoPorCantidad
-        Compra ocho = new Compra(10000,TipoCliente.COMUN,8,TipoEnvio.RETIRO_SUCURSAL);
-        check("mayor5+mayor10 8 prod = compuesto", eq(c.calcularPrecio(ocho, new DescuentoMayor5(), new DescuentoMayor10()),
-                c.calcularPrecio(ocho, new DescuentoPorCantidad())));
+    // Compara dos precios con una pequena tolerancia.
+    private static boolean eq(double a, double b) {
+        return Math.abs(a - b) < 0.01;
     }
 
-    // Log del Handler inyectable (sin System.out fijo)
-    static void testOutputInyectable() {
-        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-        java.io.PrintStream ps = new java.io.PrintStream(bos);
-        TiendaController ctrl = new TiendaController();
-        com.tienda.chain.Handler cadena = ctrl.crearCadenaBase().setOutput(ps);
-        ResultadoValidacion r = cadena.handle(new Pedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL), 10000, true,true,true));
-        String log = bos.toString();
-        check("output inyectable captura pasos", r.isAprobado()
-                && log.contains("Validar Cliente") && log.contains("Validar Stock") && log.contains("Validar Pago"));
-        // reinyectar System.out no rompe default
-        cadena.setOutput(System.out);
-        check("output reinyectable a System.out", ctrl.procesarPedido(
-                new Compra(10000,TipoCliente.COMUN,1,TipoEnvio.RETIRO_SUCURSAL),
-                cadena, true,true,true).isAprobado());
+    // Cuenta un resultado de verificacion.
+    private static void check(String nombre, boolean ok) {
+        if (ok) {
+            pass++;
+            System.out.println("  PASS: " + nombre);
+        } else {
+            fail++;
+            System.out.println("  FAIL: " + nombre);
+        }
     }
 }

@@ -1,75 +1,47 @@
 package com.tienda.controller;
 
-import com.tienda.chain.Handler;
-import com.tienda.chain.ResultadoValidacion;
-import com.tienda.chain.ValidadorCliente;
-import com.tienda.chain.ValidadorPago;
-import com.tienda.chain.ValidadorStock;
-import com.tienda.model.Compra;
-import com.tienda.model.Pedido;
-import com.tienda.strategy.CalculadoraPrecio;
-import com.tienda.strategy.EstrategiaPrecio;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import com.tienda.model.dao.PedidoDAO;
+import com.tienda.model.domain.Compra;
+import com.tienda.model.domain.Pedido;
+import com.tienda.model.services.CalculoPrecioService;
+import com.tienda.model.services.ValidacionPedidoService;
+import com.tienda.view.ConsolaView;
 
-// Controller MVC: orquesta Strategy+Chain sin tocar View
+// Capa Controlador: conecta la Vista con el Model.
+// No tiene reglas de negocio: solo pide procesar y mostrar resultados.
 public class TiendaController {
+    private final ConsolaView view;
+    private final PedidoDAO pedidoDao;
+    private final CalculoPrecioService calculoPrecioService =
+            new CalculoPrecioService();
 
-    public double calcularPrecio(Compra compra, List<EstrategiaPrecio> estrategias) {
-        if (compra == null) throw new IllegalArgumentException("Compra requerida");
-        if (compra.getTipoCliente() == null) throw new IllegalArgumentException("TipoCliente requerido");
-        CalculadoraPrecio calc = new CalculadoraPrecio();
-        for (EstrategiaPrecio e : estrategias) calc.agregarEstrategia(e);
-        return calc.calcularConDetalle(compra).precioFinal;
-    }
-    public double calcularPrecio(Compra compra, EstrategiaPrecio... estrategias) {
-        return calcularPrecio(compra, Arrays.asList(estrategias));
+    public TiendaController(ConsolaView view, PedidoDAO pedidoDao) {
+        this.view = view;
+        this.pedidoDao = pedidoDao;
     }
 
-    public ResultadoOperacion.CalculadoraDetalle calcularConDetalle(Compra compra, List<EstrategiaPrecio> estrategias) {
-        if (compra == null) throw new IllegalArgumentException("Compra requerida");
-        if (compra.getTipoCliente() == null) throw new IllegalArgumentException("TipoCliente requerido");
-        CalculadoraPrecio calc = new CalculadoraPrecio();
-        for (EstrategiaPrecio e : estrategias) calc.agregarEstrategia(e);
-        CalculadoraPrecio.ResultadoCalculo r = calc.calcularConDetalle(compra);
-        return new ResultadoOperacion.CalculadoraDetalle(compra.getPrecioBase(), r.detalle);
+    // Calcula el precio final de la compra y lo muestra.
+    public double calcularPrecioCompra(Compra compra) {
+        double precioFinal = calculoPrecioService.calcular(compra);
+        view.mostrarCalculoCompra(compra);
+        return precioFinal;
     }
 
-    public ResultadoValidacion validarPedido(Pedido pedido, Handler cadena) {
-        if (pedido == null) throw new IllegalArgumentException("Pedido requerido");
-        if (cadena == null) return ResultadoValidacion.ok("Sin validaciones - aprobado");
-        return cadena.handle(pedido);
+    // Procesa el pedido, lo guarda en el DAO y muestra el resultado.
+    public boolean procesarPedido(Pedido pedido,
+            ValidacionPedidoService validacionService) {
+        view.mostrarInicioPedido(pedido);
+        boolean aprobado = validacionService.procesar(pedido);
+        pedidoDao.guardar(pedido);
+        view.mostrarResultadoPedido(pedido);
+        return aprobado;
     }
 
-    public ResultadoOperacion procesarPedido(Compra compra, List<EstrategiaPrecio> estrategias, Handler cadena,
-                                             boolean clienteValido, boolean stockDisponible, boolean pagoValido) {
-        double precioFinal = calcularPrecio(compra, estrategias);
-        Pedido pedido = new Pedido(compra, precioFinal, clienteValido, stockDisponible, pagoValido);
-        ResultadoValidacion v = validarPedido(pedido, cadena);
-        ResultadoOperacion.CalculadoraDetalle detalle = calcularConDetalle(compra, estrategias);
-        return new ResultadoOperacion(compra, precioFinal, pedido, v, detalle);
+    public void mostrarPedidosPersistidos() {
+        view.mostrarPedidosPersistidos(pedidoDao.listar());
     }
 
-    public ResultadoOperacion procesarPedido(Compra compra, Handler cadena, boolean clienteValido, boolean stockDisponible, boolean pagoValido, EstrategiaPrecio... estrategias) {
-        return procesarPedido(compra, Arrays.asList(estrategias), cadena, clienteValido, stockDisponible, pagoValido);
+    public void mostrarTitulo(String titulo) {
+        view.mostrarTitulo(titulo);
     }
-
-    public Handler crearCadenaBase() {
-        Handler c = new ValidadorCliente();
-        Handler s = new ValidadorStock();
-        Handler p = new ValidadorPago();
-        c.setSiguiente(s).setSiguiente(p);
-        return c;
-    }
-
-    public Handler crearCadenaCon(Handler extra) {
-        Handler base = crearCadenaBase();
-        Handler tail = base;
-        while (tail.getSiguiente() != null) tail = tail.getSiguiente();
-        tail.setSiguiente(extra);
-        return base;
-    }
-
-    public List<EstrategiaPrecio> estrategias(EstrategiaPrecio... e) { return new ArrayList<EstrategiaPrecio>(Arrays.asList(e)); }
 }

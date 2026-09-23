@@ -1,123 +1,192 @@
-# Tienda Online — Strategy + Chain of Responsibility + SOLID + MVC
+# TP Patrones de Diseno - Strategy + Chain of Responsibility
 
-Trabajo Práctico — Patrones de Diseño en Java 8
+Tienda online que calcula el precio final de una compra (**Strategy**) y luego
+valida el pedido resultante a traves de una cadena de controles (**Chain of
+Responsibility**), organizado con la arquitectura Model (domain + services +
+dao) - Vista - Controlador.
 
-## Estructura MVC
+## Estructura del proyecto
 
 ```
 src/main/java/com/tienda/
-  model/       → Compra, Pedido, TipoCliente, TipoEnvio, ResultadoValidacion (Model SRP)
-  strategy/    → EstrategiaPrecio (interface) + 6 estrategias + CalculadoraPrecio (Strategy Context)
-  chain/       → Handler (abstract) + 4 validadores (Chain)
-  challenge/   → DescuentoBlackFriday + ValidadorLimiteCompra (OCP - sin tocar código base)
-  controller/  → TiendaController + ResultadoOperacion (Controller - orquesta todo, TESTEABLE)
-  view/        → TiendaView (View - solo imprime, sin lógica)
-  Main.java    → Wiring MVC (sin lógica, solo 5 casos demo)
+  Main.java                                # Presenta el proyecto (demo en TestRunner)
+  model/
+    utils/PrecioUtil.java                  # formatearPrecio (compartido)
+    domain/                                # Entidades y contratos
+      Compra.java                          # Compra (guarda sus estrategias)
+      Pedido.java                          # Pedido (guarda el historial de pasos)
+      EstrategiaDescuento.java             # Interfaz Strategy
+      Handler.java                         # Clase abstracta Chain of Responsibility
+      ResultadoValidacion.java             # Resultado de una validacion
+    services/                              # Reglas de negocio
+      ClienteComun.java                    # Cliente sin descuento
+      ClientePremium.java                  # -10%
+      ClienteVip.java                      # -15%
+      DescuentoPorCantidad.java            # -5% (>5) / -10% (>10)
+      EnvioRetiroSucursal.java             # +$0
+      EnvioNormal.java                     # +$5.000
+      EnvioExpress.java                    # +$10.000
+      PromocionPorcentual.java             # Promocion parametrizable
+      DescuentoBlackFriday.java            # DESAFIO (-25%)
+      CalculoPrecioService.java            # Ejecuta el Strategy sobre una Compra
+      ValidarCliente.java                  # Control de cliente
+      ValidarStock.java                    # Control de stock
+      ValidarPago.java                     # Control de pago
+      ValidarLimiteCompra.java             # DESAFIO (limite $500.000)
+      ValidacionPedidoService.java         # Arma y ejecuta la cadena
+    dao/
+      PedidoDAO.java                       # Interfaz de persistencia
+      PedidoDAOMemoria.java                # Implementacion en memoria
+  view/
+    ConsolaView.java                       # Toda la salida por consola
+  controller/
+    TiendaController.java                  # Orquesta Model y Vista
 src/test/java/com/tienda/
-  strategy/CalculadoraPrecioTest.java
-  chain/ChainTest.java
-  controller/TiendaControllerTest.java
-  challenge/DesafioTest.java
-  model/ModelTest.java
-  TestRunner.java → runner sin JUnit (19 tests, sin Main)
-docs/
-  diagrama.puml, FUTURAS_IMPLEMENTACIONES.md, CORRECCION_ERRORES.md
+  TestRunner.java                          # Demo + tests (sin JUnit)
 ```
 
-> **REGLA cumplida:** nada se maneja full por Main. `TiendaController` expone `calcularPrecio()`, `validarPedido()`, `procesarPedido()` puros (sin `System.out`) y es testeado sin Main. `Main` solo hace wiring.
+**Model** = `domain` + `services` + `dao`:
 
-## Compilar y ejecutar
+- `domain` tiene las entidades (`Compra`, `Pedido`) y los **contratos** de los
+  dos patrones (`EstrategiaDescuento`, `Handler`), sin ninguna regla de negocio
+  concreta.
+- `services` tiene el **comportamiento del sistema**: las implementaciones
+  concretas de Strategy (reglas de descuento/recargo) y de Chain of
+  Responsibility (validadores), mas los dos servicios que las ejecutan.
+- `dao` persiste los `Pedido` ya procesados.
+
+**Vista** (`view/ConsolaView.java`) es la unica capa que hace `print`.
+**Controlador** (`controller/TiendaController.java`) conecta Vista y Model, sin
+reglas de negocio propias.
+
+## Como correr la demo y los tests
 
 ```bat
-compile.bat      # compila Main + TestRunner sin dependencias
-run.bat          # compila + java com.tienda.Main (MVC, 5 casos)
-test.bat         # compila + java com.tienda.TestRunner (19 PASS) + mvn test si hay Maven
+compile.bat   # compila main + TestRunner (sin dependencias)
+run.bat       # compila y muestra Main (presentacion)
+test.bat      # compila y corre TestRunner (15 PASS, con la demo)
 ```
 
 Manual sin scripts:
-```bat
-javac -d out -encoding UTF-8 -sourcepath src\main\java src\main\java\com\tienda\model\*.java src\main\java\com\tienda\strategy\*.java src\main\java\com\tienda\chain\*.java src\main\java\com\tienda\challenge\*.java src\main\java\com\tienda\controller\*.java src\main\java\com\tienda\view\*.java src\main\java\com\tienda\Main.java
-java -cp out com.tienda.Main
 
+```bat
+javac -d out -encoding UTF-8 -sourcepath src\main\java src\main\java\com\tienda\Main.java
 javac -d out -encoding UTF-8 -cp out -sourcepath src\test\java src\test\java\com\tienda\TestRunner.java
 java -cp out com.tienda.TestRunner
 ```
 
-Con Maven:
-```bat
-mvn test              # JUnit5 (5 clases, ~20 tests)
-mvn compile exec:java # Main MVC
+`TestRunner` muestra la demo completa (PARTE 1, PARTE 2, DESAFIO y DAO) y
+despues corre las verificaciones unitarias de los tres servicios.
+
+## Diagrama de funcionamiento
+
+```mermaid
+flowchart TD
+    Main["Main"] --> Ctrl["TiendaController"]
+    Ctrl -- crea una compra --> Compra["Compra<br/>(precioInicial + estrategias)"]
+    Compra --> Calc["CalculoPrecioService<br/><b>STRATEGY</b>: aplica las<br/>estrategias en orden"]
+    Calc -- deja historial y precioFinal --> Compra
+    Compra -- precioFinal --> Pedido["Pedido<br/>(flags: cliente, stock, pago)"]
+    Ctrl -- procesa --> Valid["ValidacionPedidoService<br/>arma la cadena"]
+    Valid --> H1["ValidarCliente"]
+    H1 --> H2["ValidarStock"]
+    H2 --> H3["ValidarPago"]
+    H3 --> H4["ValidarLimiteCompra<br/>(solo con incluirLimiteCompra)"]
+    H1 -- "rechaza: corta la cadena" --> Rech["Pedido RECHAZADO"]
+    H2 -- "rechaza: corta la cadena" --> Rech
+    H3 -- "rechaza: corta la cadena" --> Rech
+    H4 -- "rechaza: corta la cadena" --> Rech
+    H4 -- "aprueba" --> Apr["Pedido APROBADO"]
+    Apr --> Dao[("PedidoDAOMemoria<br/>guarda el pedido")]
+    Rech --> Dao
+    Dao --> View["ConsolaView<br/>muestra el resultado"]
+    Ctrl --> View
 ```
 
-## Tests — sin Main
+Diagrama de clases en `docs/diagrama.puml` (PlantUML).
 
-**JUnit5** (`pom.xml: JUnit 5.9.3`): `mvn test` corre `CalculadoraPrecioTest`, `ChainTest`, `TiendaControllerTest`, `DesafioTest`, `ModelTest`.
+`Compra` acumula un `precio_final` combinando las `EstrategiaDescuento` que se
+le agregaron (Strategy), a traves de `CalculoPrecioService`. Ese precio pasa a
+formar parte de un `Pedido`, que `ValidacionPedidoService` hace recorrer la
+cadena de `Handler` (Chain of Responsibility) para ser aprobado o rechazado.
+Los dos patrones son independientes entre si; se comunican unicamente a traves
+del dato `precio_final`, y `TiendaController` es el unico que conoce a ambos
+servicios.
 
-**Sin Maven** (CI / corrección rápida): `TestRunner.java` replica los mismos casos sin importar `org.junit` — `java -cp out com.tienda.TestRunner` (26 tests, usa solo `TiendaController`).
+## Preguntas
 
-Todos los tests llaman a `TiendaController`/`CalculadoraPrecio`/`Handler` directamente, nunca a `Main`.
+**?Que problema resuelve Strategy?** Evita tener un unico metodo gigante con
+`if` para cada combinacion posible de cliente, cantidad, envio y promocion.
+Cada regla de precio queda encapsulada en su propia clase de `services`,
+intercambiable en tiempo de ejecucion, y se pueden agregar reglas nuevas (por
+ejemplo `DescuentoBlackFriday`) sin tocar el codigo que ya funciona (principio
+abierto/cerrado).
 
-## Parte 1 — Strategy
+**?Por que una compra puede necesitar varias estrategias?** Porque las reglas
+del negocio no son excluyentes: el mismo pedido puede tener a la vez un tipo
+de cliente, un descuento por cantidad, una promocion especial y un costo de
+envio. `Compra` no aplica "una" estrategia sino una lista de estrategias, que
+`CalculoPrecioService` aplica en secuencia sobre el precio acumulado; por eso
+el orden de agregado importa (los descuentos porcentuales se calculan siempre
+sobre el precio ya afectado por las reglas anteriores).
 
-**Interface:** `EstrategiaPrecio` (`strategy/EstrategiaPrecio.java:12`) — `aplicar(precio, compra)` + `getDescripcion()` (ISP, DIP)
+**?Que problema resuelve Chain of Responsibility?** Evita que un unico
+metodo/objeto conozca y ejecute todas las validaciones del pedido (cliente,
+stock, pago, limite de compra). Cada control es un `Handler` de `services` que
+solo sabe validar una cosa y pasar el pedido al siguiente. Se pueden agregar,
+quitar o reordenar controles (como `ValidarLimiteCompra`) sin modificar los
+demas.
 
-| Clase | Regla |
-|-------|-------|
-| `DescuentoClienteComun` | 0% |
-| `DescuentoClientePremium` | -10% si PREMIUM |
-| `DescuentoClienteVIP` | -15% si VIP |
-| `DescuentoMayor5` | >5 y ≤10 → -5% |
-| `DescuentoMayor10` | >10 → -10% |
-| `DescuentoPorCantidad` | compone `DescuentoMayor5` + `DescuentoMayor10` (compatibilidad) |
-| `CostoEnvio` | Retiro $0 / Normal $5000 / Express $10000 |
-| `PromocionEspecial` | parametrizable, default -10% |
+**?Que sucede cuando un elemento de la cadena rechaza el pedido?** El `Handler`
+que detecta el problema llama a `pedido.rechazar(...)`, guarda el motivo y
+devuelve `false` sin invocar al siguiente elemento de la cadena: el
+procesamiento se detiene ahi mismo y ninguna validacion posterior se ejecuta
+(ver `PED-002`, que falla en `ValidarStock` y nunca llega a `ValidarPago`).
 
-**Context:** `CalculadoraPrecio` (`strategy/CalculadoraPrecio.java:13`) — `calcularConDetalle()` puro para Controller/View.
+## Decisiones de arquitectura (Model / Vista / Controlador)
 
-**Ejemplo enunciado:** $100.000 → VIP -15% → Cantidad(12) -10% → Promo -5% → Express +$10.000 = $82.675 (Caso 1).
+**?Por que los contratos (`EstrategiaDescuento`, `Handler`) estan en `domain`
+y las implementaciones concretas en `services`?** Porque `domain` modela los
+conceptos del problema (que es una `Compra`, que es un `Pedido`, que una
+compra "puede tener reglas de precio") sin conocer ningun numero de negocio.
+Los porcentajes, montos y condiciones concretas (15% VIP, +$10.000 de envio
+Express, el limite de $500.000) son el comportamiento del sistema, que es la
+responsabilidad que le corresponde a `services`. Separarlos asi permite
+cambiar una regla de negocio sin tocar la estructura del modelo, y viceversa.
 
-## Parte 2 — Chain of Responsibility
+**?Por que se agrego una capa DAO si el TP no pide persistencia?** Porque
+contemplar todos los aspectos del proyecto (diseno, arquitectura,
+implementacion, pruebas, mantenimiento) implica dejar el "enchufe" de
+persistencia listo desde el diseno. Se definio como una interfaz (`PedidoDAO`)
+con una implementacion en memoria (`PedidoDAOMemoria`): el dia que el sistema
+necesite guardar los pedidos en una base de datos real, alcanza con escribir
+una nueva clase que implemente `PedidoDAO`, sin tocar `services`, `controller`
+ni `view`.
 
-**Abstract Handler:** `Handler` (`chain/Handler.java:11`) — `setSiguiente()` fluent + `handle()` final que corta en ERROR. Log inyectable con `setOutput(PrintStream)` (MVC limpio).
+**?Por que `Compra` no tiene su propio DAO?** Porque `Compra` es un objeto de
+calculo transitorio: existe solo para reunir los datos que necesita
+`CalculoPrecioService` y producir un `precio_final`, que es lo que
+efectivamente viaja hacia el `Pedido` y se persiste. No hay ningun caso de uso
+que necesite volver a consultar una `Compra` mas adelante, asi que agregarle
+un DAO propio seria persistencia sin justificacion.
 
-**Validadores (≥3):** `ValidadorCliente` → `ValidadorStock` → `ValidadorPago` → `ValidadorFraude` (opcional). Cada handler SRP.
+**?Por que toda la impresion por consola vive en `ConsolaView` y no en los
+`services` o en `Handler`?** Porque asi el Controlador y los Services no
+dependen de "como" se le muestra algo al usuario: solo calculan datos y los
+dejan disponibles (`compra.getHistorial()`, `pedido.getPasos()`). Si manana
+este sistema necesitara una interfaz web en lugar de la consola, alcanza con
+escribir otra vista que consuma los mismos `services` sin modificarlos.
 
-Si falla, **detiene la cadena** y retorna `ResultadoValidacion.error(motivo)`.
+## Desafio (Open/Closed)
 
-## MVC
-
-- **Model:** `Compra`, `Pedido`, `TipoCliente`, `TipoEnvio`, `ResultadoValidacion` — solo datos.
-- **View:** `TiendaView` (`view/TiendaView.java:12`) — `mostrarEncabezado()`, `mostrarCompra()`, `mostrarCalculoDetalle()`, `mostrarChainHeader()`, `mostrarResultadoFinal()`. Sin lógica.
-- **Controller:** `TiendaController` (`controller/TiendaController.java:13`) — `calcularPrecio()`, `validarPedido()`, `procesarPedido()`, `crearCadenaBase()`, `crearCadenaCon()`. Testeable puro. `Main.java` solo hace wiring.
-
-## Casos (via Controller, no Main)
-
-1. **Aprobado** — VIP 12u Express → $82675
-2. **Rechazado stock** — stock=false → corta en Validar Stock, $47750
-3. **Rechazado pago** — pago=false → corta en Pago, $67500
-4. **Desafío aprobado** — BlackFriday -25% + límite 200k → $64506.25
-5. **Desafío rechazado** — límite 150k → ERROR
-
-## Desafío OCP
-
-Sin modificar `strategy/*` ni `chain/*`:
-- `challenge/DescuentoBlackFriday.java` implements `EstrategiaPrecio`
-- `challenge/ValidadorLimiteCompra.java` extends `Handler`
-Se inyectan vía `controller.crearCadenaCon(new ValidadorLimiteCompra(...))` y `estrategias.add(new DescuentoBlackFriday())`.
-
-## SOLID
-
-- **SRP:** cada clase una responsabilidad
-- **OCP:** abierto a extensión (challenge/future) cerrado a modificación
-- **LSP:** cualquier `EstrategiaPrecio`/`Handler` sustituye a otra
-- **ISP:** interfaces mínimas
-- **DIP:** Controller/View dependen de abstracciones
-
-## Diagrama
-
-`docs/diagrama.puml` (PlantUML, incluye MVC) — https://www.plantuml.com/plantuml/
+- `DescuentoBlackFriday` se agrego como una clase nueva en `services` que
+  implementa `EstrategiaDescuento`; ninguna estrategia existente se modifico.
+- `ValidarLimiteCompra` se agrego como una clase nueva en `services` que
+  extiende `Handler`; `ValidarCliente`, `ValidarStock` y `ValidarPago`
+  quedaron intactos. `ValidacionPedidoService(true)` simplemente lo enchufa al
+  final de la cadena existente.
 
 ## Requisitos
 
-- Java 8+ (probado Temurin 1.8)
-- Maven 3.6+ opcional (para JUnit); sin Maven usar `test.bat` / `TestRunner`
+- Java 8+ (probado con Temurin 1.8)
+- No necesita Maven ni ninguna dependencia
